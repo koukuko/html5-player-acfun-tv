@@ -4,12 +4,12 @@
  * @version 北山しずく 3.0.1
  * @author Akino Mizuho.Koukuko <9@acfun.tv>
  */
-
+/// <reference path='jquery.d.ts'/>
 /// <reference path='interface.d.ts'/>
 /// <reference path='settings.prod.ts'/>
 /// <reference path='utility.ts'/>
 /// <reference path='player.ts'/>
-/// <reference path='jquery.d.ts'/>
+
 
 class shizuku {
 
@@ -19,6 +19,9 @@ class shizuku {
     public player = new player();
     public playerElement;
     public videoSrc;
+
+    public danmaku;
+    public danmakuElement;
 
     constructor(){
 
@@ -35,8 +38,22 @@ class shizuku {
             self.preloadError('#0 初始化失败','参数错误');
         }
 
-        // 3. 解析视频
+        // 3.载入弹幕
+        self.danmakuElement = self.playerElement.container.danmaku;
+        self.danmaku = new CommentManager(self.danmakuElement[0]);
+        self.danmaku.init();
 
+        // 3. 解析视频
+        self.loadVideo();
+
+    }
+
+    /**
+     * 0. 获取视频信息
+     */
+    private loadVideo(){
+
+        var self = this;
         var vid = self.hashOptions.vid;
 
         $.getJSON(settings.httpJiexiUrl+'?type=html5&vid='+vid)
@@ -47,7 +64,7 @@ class shizuku {
 
                     self.videoSrc = data.result;
 
-                    // JUMP
+                   // JUMP
                     // 至此开始进入player.ts 转交控制权
                     if(self.videoSrc && (self.videoSrc['C10'] || self.videoSrc['C20'] || self.videoSrc['C30'] || self.videoSrc['C40'] || self.videoSrc['C50'])){
                         self.player.load(self.videoSrc);
@@ -66,7 +83,6 @@ class shizuku {
             .fail(function(error){
                 self.preloadError('#3 视频解析失败:'+vid,'网络通讯失败');
             });
-
     }
 
     /**
@@ -75,6 +91,7 @@ class shizuku {
     private bindPlayerElement(){
 
         this.playerElement = {
+            root: $('.player'),
             preLoad : {
                 root: $('.preload'),
                 icon: $('.preload .preload-icon'),
@@ -100,7 +117,8 @@ class shizuku {
                         range: $('.controller .controller-line-output-range')
                     }
                 }
-            }
+            },
+            toolTip: $('.toolTip')
         };
 
         this.player.bind(this);

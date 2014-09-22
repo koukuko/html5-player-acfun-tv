@@ -7,6 +7,10 @@
 
 var settings = {
 
-    httpJiexiUrl:'http://localhost:9001/shizuku/jiexi/index.php'
+    httpJiexiUrl:'http://localhost:9001/shizuku/jiexi/index.php',
+
+    danmakuUrl:'http://localhost:9001/shizuku/danmaku',
+
+    commentLifeTime: 7000
 
 };

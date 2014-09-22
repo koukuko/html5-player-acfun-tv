@@ -18,11 +18,16 @@ class player {
     public currentTime = 0;
     public currentPart = 0;
 
+    public tryResume = 0;
+    public tryReConnect = 0;
+
+    public lockSeek = false;
+
     /**
      * 播放器父级控制器
      * @param shizuku
      */
-    public bind(shizuku){
+    public bind(shizuku) {
         this.shizuku = shizuku;
         this.playerElement = shizuku.playerElement;
     }
@@ -31,39 +36,53 @@ class player {
      * 终止播放器执行，销毁所有资源
      * @return boolean
      */
-    public destruct(){
-
+    public destruct() {
+        this.videoElement.remove();
     }
 
     /**
      * 载入视频
      * @param videoSrc mixed 源地址
      */
-    public load(videoSrc){
+    public load(videoSrc) {
+
+        var self = this;
 
         this.videoSrc = videoSrc;
 
         // 优先使用高清画质
-        this.nowVideoSrc = videoSrc['C80'] ||videoSrc['C70'] ||videoSrc['C60'] || videoSrc['C50'] || videoSrc['C40'] || videoSrc['C30'] || videoSrc['C20'] || videoSrc['C10'];
+        this.nowVideoSrc = videoSrc['C80'] || videoSrc['C70'] || videoSrc['C60'] || videoSrc['C50'] || videoSrc['C40'] || videoSrc['C30'] || videoSrc['C20'] || videoSrc['C10'];
 
         // 告知长度
         this.playerElement.controller.line.total.text(this.formatSecond(this.nowVideoSrc.totalseconds));
-        this.playerElement.controller.line.output.range.attr('max',this.nowVideoSrc.totalseconds);
+        this.playerElement.controller.line.output.range.attr('max', this.nowVideoSrc.totalseconds);
 
-        this.prepare(this.nowVideoSrc);
+        // 获取弹幕
+        $.getJSON(settings.danmakuUrl + '/'+this.shizuku.hashOptions.vid + '-' + Math.floor(Math.floor(this.nowVideoSrc.totalseconds/60)*100))
+            .then(function(data){
+                if(data){
+                    var comment = [];
+                    comment = comment.concat(data[0],data[1],data[2]);
+                }
+                var result = AcfunParser(JSON.stringify(comment));
+                self.shizuku.danmaku.load(result);
+
+                self.prepare(self.nowVideoSrc);
+
+            });
 
     }
 
     /**
      * 准备视频，初始化
      */
-    public prepare(nowVideoSrc){
+    public prepare(nowVideoSrc) {
 
         var self = this;
 
         self.videoPartLength = nowVideoSrc['files'].length;
 
-        for(var i in nowVideoSrc['files']){
+        for (var i in nowVideoSrc['files']) {
 
             self.videoPart.push(nowVideoSrc['files'][i].seconds);
 
@@ -72,34 +91,34 @@ class player {
             c.src = nowVideoSrc['files'][i].url;
             c.preload = 'metadata';
             c.controls = false;
-            $(c).data('part',i).addClass('container-video-entity').appendTo(this.playerElement.container.video);
+            $(c).data('part', i).addClass('container-video-entity').appendTo(this.playerElement.container.video);
 
             $(c)
-                .on('play',function(){
+                .on('play', function () {
 
                     // 一旦一个视频开始播放，那么将其设定为active并暂停其他视频
                     self.videoElement.removeClass('active');
                     $(this).addClass('active');
 
-                    self.videoElement.each(function(){
-                        if($(this).data('part')!= self.currentPart){
+                    self.videoElement.each(function () {
+                        if ($(this).data('part') != self.currentPart) {
                             $(this)[0].pause();
                         }
                     });
 
                 })
-                .on('canplaythrough',function(){
+                .on('canplaythrough', function () {
                     self.preloadNextPart($(this).data('part'));
                 })
-                .on('ended',function(){
+                .on('ended', function () {
                     self.playNextPart($(this).data('part'));
                 })
-                .on('timeupdate',function(){
+                .on('timeupdate', function () {
 
                     var currentTime = 0;
 
-                    for (var j = 0; j <= self.currentPart; j++){
-                        if(self.currentPart == j){
+                    for (var j = 0; j <= self.currentPart; j++) {
+                        if (self.currentPart == j) {
                             currentTime += Math.floor(this.currentTime);
                         } else {
                             currentTime += self.videoPart[j];
@@ -109,36 +128,102 @@ class player {
                     self.currentTime = currentTime;
 
                     self.playerElement.controller.line.now.text(self.formatSecond(self.currentTime));
-                    self.playerElement.controller.line.output.played.width((self.currentTime/self.nowVideoSrc.totalseconds)*100+'%')
-                    self.playerElement.controller.line.output.range.val(self.currentTime);
+                    self.playerElement.controller.line.output.played.width((self.currentTime / self.nowVideoSrc.totalseconds) * 100 + '%');
 
+                    if (!self.lockSeek) {
+                        self.playerElement.controller.line.output.range.val(self.currentTime);
+                    }
+
+                    self.shizuku.danmaku.time(self.currentTime*1000);
+
+                })
+                .on('error', function () {
+                    // 发生错误，重新尝试播放
+                    if (!self.tryResume) {
+                        self.showTooltip('播放视频发生错误:尝试重新播放');
+                        self.play();
+                    } else if (!self.tryReConnect) {
+
+                        var currentTime = self.currentTime;
+                        var paused = self.getActiveVideoElement()[0].paused;
+
+                        self.showTooltip('播放视频发生错误:尝试重新载入');
+                        self.destruct();
+                        self.shizuku.loadVideo();
+
+                        self.setPosition(currentTime);
+
+                        if(!paused){
+                            self.play();
+                        }
+
+                    }
                 });
-
 
         }
 
         self.videoElement = $('.container-video-entity');
 
         // 使第一个视频可以自动载入
-        self.videoElement.eq(0).attr('preload','auto').addClass('active');
+        self.videoElement.eq(0).attr('preload', 'auto').addClass('active');
         self.currentTime = 0;
         self.playerElement.controller.line.now.text('00:00');
 
-        // 分段视频自动切换
+        // 播放按钮
+        self.playerElement.controller.play.on('click', function () {
 
+            var element = self.playerElement.controller.play.find('.controller-icon').removeClass('controller-icon-play controller-icon-pause');
 
+            if (self.togglePause()) {
+                element.addClass('controller-icon-play');
+            } else {
+                element.addClass('controller-icon-pause');
+            }
 
+        });
+
+        self.playerElement.controller.fullScreen.on('click', function () {
+
+            _.toggleFullScreen(self.playerElement.root[0]);
+
+        });
+
+        self.playerElement.controller.line.output.range.on('mousedown', function () {
+            self.lockSeek = true;
+        }).on('mousemove', function () {
+            if (self.lockSeek) {
+                self.showTooltip('跳转到 ' + self.formatSecond(self.playerElement.controller.line.output.range.val()));
+            }
+        }).on('mouseup', function () {
+            self.setPosition(self.playerElement.controller.line.output.range.val());
+            self.lockSeek = false;
+        });
+
+        self.setBounds();
+
+        $(window).on('resize',function(){
+            self.setBounds();
+        });
+
+    }
+
+    /**
+     * 设置弹幕边界和滚动速度
+     */
+    private setBounds(){
+        settings.commentLifeTime = Math.floor(window.innerWidth * 7.14);
+        this.shizuku.danmaku.setBounds();
     }
 
     /**
      * 载入下一个分段
      */
-    private preloadNextPart (i){
+    private preloadNextPart(i) {
 
         i = parseInt(i);
 
-        if( (i+1) < this.videoPartLength){
-            this.videoElement.eq(i+1).attr('preload','auto');
+        if ((i + 1) < this.videoPartLength) {
+            this.videoElement.eq(i + 1).attr('preload', 'auto');
         }
 
     }
@@ -152,10 +237,14 @@ class player {
 
         this.videoElement.eq(i)[0].pause();
 
-        if( (i+1) < this.videoPartLength){
-            this.videoElement.eq(i+1)[0].currentTime = 0;
-            this.videoElement.eq(i+1)[0].play();
+        if ((i + 1) < this.videoPartLength) {
+            this.videoElement.eq(i + 1)[0].currentTime = 0;
+            this.videoElement.eq(i + 1)[0].play();
             this.currentPart = i + 1;
+        } else {
+            this.pause();
+            this.playerElement.controller.play.find('.controller-icon').removeClass('controller-icon-play controller-icon-pause').addClass('controller-icon-play');
+            this.setPosition(0);
         }
 
     }
@@ -163,7 +252,7 @@ class player {
     /**
      * 将秒转换为xx:xx格式
      */
-    private formatSecond(s){
+    private formatSecond(s) {
         var t = '00:00';
         if (s > -1) {
             var min = Math.floor(s / 60);
@@ -183,10 +272,41 @@ class player {
     }
 
     /**
-     * 静音
-     * @return boolean this.status.muted
+     * 显示提示信息
+     * @returns {*}
      */
-    public mute(){
+    private showTooltip(msg) {
+
+        var element = this.playerElement.toolTip;
+
+        element
+            .text(msg)
+            .css('left', (window.innerWidth - element.width()) / 2)
+            .stop(true,true)
+            .fadeIn(200)
+            .delay(3000)
+            .fadeOut(200);
+
+        return msg;
+
+    }
+
+    /**
+     * 获取active元素
+     */
+    public getActiveVideoElement() {
+
+        var element = this.videoElement.filter('.active');
+
+        if (element) {
+            return element;
+        } else if (this.videoElement) {
+            this.videoElement.eq(0).addClass('.active');
+            return this.videoElement.eq(0);
+        } else {
+            console.error('没有被激活的元素');
+            return {};
+        }
 
     }
 
@@ -194,91 +314,77 @@ class player {
      * 暂停，暂停当前的播放
      * @return boolean this.status.paused
      */
-    public pause(){
-        if(this.videoElement.filter('.active')){
-            this.videoElement.filter('.active')[0].pause();
-        } else if(this.videoElement.eq(0)) {
-            this.videoElement.eq(0).addClass('.active');
-        } else {
-            console.error('没有播放元素');
-        }
+    public pause() {
+        this.videoElement.each(function () {
+            this.pause();
+        });
+
+        this.shizuku.danmaku.stopTimer();
     }
 
     /**
      * 开始播放
      * @return boolean this.status.paused
      */
-    public play(){
-        if(this.videoElement.filter('.active')){
-            this.videoElement.filter('.active')[0].play();
-        } else if(this.videoElement.eq(0)) {
-            this.videoElement.eq(0).addClass('.active');
-            this.videoElement.eq(0)[0].play();
-        } else {
-            console.error('没有播放元素');
-        }
-
+    public play() {
+        this.getActiveVideoElement()[0].play();
+        this.shizuku.danmaku.startTimer();
     }
 
     /**
-     * 恢复播放
-     * @return boolean this.status.paused
+     * 切换暂停
+     * @return paused {boolean} 是否暂停
      */
-    public resume(){
+    public togglePause() {
+
+        var element = this.getActiveVideoElement()[0];
+
+        if (element.paused) {
+            this.play();
+        } else {
+            this.pause();
+        }
+
+        return element.paused;
 
     }
 
     /**
      * 跳转到指定位置
-     * @param msecOffset int 毫秒偏差
+     * @param secOffset int 毫秒偏差
      */
-    public setPosition(msecOffset){
+    public setPosition(secOffset:number) {
+
+        // 寻找part
+        for (var i in this.videoPart) {
+
+            if (secOffset < this.videoPart[i]) {
+
+                this.currentTime = secOffset;
+                this.currentPart = i;
+
+                this.videoElement.removeClass('active');
+
+                var activeElement = this.videoElement.eq(i);
+                activeElement.addClass('active');
+                activeElement[0].currentTime = secOffset;
+
+                this.videoElement.each(function(){
+                    if(!$(this).hasClass('active')){
+                        this.pause();
+                    }
+                });
+
+                break;
+            } else {
+                secOffset = secOffset - this.videoPart[i];
+            }
+
+
+        }
+
 
     }
 
-    /**
-     * 设置音量
-     * @param volume int 音量 0-100
-     * @return int this.status.volume
-     */
-    public setVolume(volume){
-
-    }
-
-    /**
-     * 停止播放
-     * @return boolean this.status.paused
-     */
-    public stop(){
-
-    }
-
-    /**
-     * 切换静音
-     */
-    public toggleMute(){
-
-    }
-
-    /**
-     * 切换暂停
-     */
-    public togglePause(){
-
-    }
-
-    /**
-     * 取消载入
-     */
-    public unload(){
-
-    }
-
-    /**
-     * 取消静音
-     */
-    public unmute(){
-
-    }
 
 }

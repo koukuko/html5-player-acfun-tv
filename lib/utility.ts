@@ -20,7 +20,7 @@ module _ {
         var params = hash.substr(1).split(';');
 
 
-        for(var i in params){
+        for(var i=0 ; i< params.length;i++){
             var param = params[i].split('=');
             result[param[0]] = param[1];
         }
@@ -39,6 +39,45 @@ module _ {
         } catch (e){
             return null;
         }
+    }
+
+    /**
+     * 全屏切换
+     * @param {HTMLElement} element DOM元素
+     * @return {boolean} 当前全屏状态
+     */
+    export function toggleFullScreen(element:HTMLElement) {
+        var enableFullScreen =
+            document.fullscreenEnabled
+            || document.mozFullscreenElement
+            || document.webkitFullscreenElement;
+
+        if (enableFullScreen) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        } else {
+            if (element.requestFullscreen) {
+                element.requestFullscreen();
+            } else if (element.mozRequestFullScreen) {
+                element.mozRequestFullScreen();
+            } else if (element.webkitRequestFullscreen) {
+                element.webkitRequestFullscreen();
+            } else if (element.msRequestFullscreen) {
+                element.msRequestFullscreen();
+            }
+        }
+
+        return document.fullscreenEnabled
+            || document.mozFullscreenElement
+            || document.webkitFullscreenElement;
+
     }
 
 
