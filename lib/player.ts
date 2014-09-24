@@ -22,6 +22,10 @@ class player {
     public tryReConnect = 0;
 
     public lockSeek = false;
+    public lockTouch = false;
+    public lockHide = false;
+
+    public lockHideTimer;
 
     /**
      * 播放器父级控制器
@@ -51,18 +55,18 @@ class player {
         this.videoSrc = videoSrc;
 
         // 优先使用高清画质
-        this.nowVideoSrc = videoSrc['C80'] || videoSrc['C70'] || videoSrc['C60'] || videoSrc['C50'] || videoSrc['C40'] || videoSrc['C30'] || videoSrc['C20'] || videoSrc['C10'];
+        this.nowVideoSrc = videoSrc['C20'] || videoSrc['C80'] || videoSrc['C70'] || videoSrc['C60'] || videoSrc['C50'] || videoSrc['C40'] || videoSrc['C30'] ||  videoSrc['C10'];
 
         // 告知长度
         this.playerElement.controller.line.total.text(this.formatSecond(this.nowVideoSrc.totalseconds));
         this.playerElement.controller.line.output.range.attr('max', this.nowVideoSrc.totalseconds);
 
         // 获取弹幕
-        $.getJSON(settings.danmakuUrl + '/'+this.shizuku.hashOptions.vid + '-' + Math.floor(Math.floor(this.nowVideoSrc.totalseconds/60)*100))
-            .then(function(data){
-                if(data){
+        $.getJSON(settings.danmakuUrl + '/' + this.shizuku.hashOptions.vid + '-' + Math.floor(Math.floor(this.nowVideoSrc.totalseconds / 60) * 100))
+            .then(function (data) {
+                if (data) {
                     var comment = [];
-                    comment = comment.concat(data[0],data[1],data[2]);
+                    comment = comment.concat(data[0], data[1], data[2]);
                 }
                 var result = AcfunParser(JSON.stringify(comment));
                 self.shizuku.danmaku.load(result);
@@ -134,14 +138,15 @@ class player {
                         self.playerElement.controller.line.output.range.val(self.currentTime);
                     }
 
-                    self.shizuku.danmaku.time(self.currentTime*1000);
+                    self.shizuku.danmaku.time(self.currentTime * 1000);
 
                 })
                 .on('error', function () {
                     // 发生错误，重新尝试播放
                     if (!self.tryResume) {
-                        self.showTooltip('播放视频发生错误:尝试重新播放');
-                        self.play();
+                        if(self.getActiveVideoElement()[0].paused){
+                            self.showTooltip('播放视频发生错误:尝试重新播放');
+                        }
                     } else if (!self.tryReConnect) {
 
                         var currentTime = self.currentTime;
@@ -153,7 +158,7 @@ class player {
 
                         self.setPosition(currentTime);
 
-                        if(!paused){
+                        if (!paused) {
                             self.play();
                         }
 
@@ -197,11 +202,89 @@ class player {
         }).on('mouseup', function () {
             self.setPosition(self.playerElement.controller.line.output.range.val());
             self.lockSeek = false;
+        }).on('touchstart', function () {
+            self.lockSeek = true;
+        }).on('touchmove', function () {
+            if (self.lockSeek) {
+                self.showTooltip('跳转到 ' + self.formatSecond(self.playerElement.controller.line.output.range.val()));
+            }
+        }).on('touchend', function () {
+            self.setPosition(self.playerElement.controller.line.output.range.val());
+            self.lockSeek = false;
         });
+        // 触摸设备操作
+        var firstTouch, lastTouch, typeTouch, valueTouch;
+        self.playerElement.container.danmaku
+            .on('dblclick', function () {
+                _.toggleFullScreen(self.playerElement.root[0]);
+            })
+            .on('click', function () {
+                self.toggleHideController();
+            })
+            .on('touchstart', function (e) {
+                firstTouch = e.originalEvent.targetTouches[0];
+                self.lockTouch = true;
+            })
+            .on('touchmove', function (e) {
+                lastTouch = e.originalEvent.targetTouches[0];
+                // 确定操作类型
+                if (!typeTouch && firstTouch && lastTouch) {
+                    if (Math.abs(lastTouch.pageX - firstTouch.pageX) > 150) {
+                        typeTouch = 'seek';
+                    } else if (Math.abs(lastTouch.pageY - firstTouch.pageY) > 150) {
+                        typeTouch = 'vol';
+                    }
+                }
+                if (typeTouch) {
+                    var text = '';
+                    if (typeTouch == 'seek') {
+                        text += '跳转到 ';
+                        valueTouch = (lastTouch.pageX - firstTouch.pageX) / self.videoElement.width();
+                        valueTouch = self.currentTime + 120 * valueTouch;
+                        if (valueTouch < 0) {
+                            valueTouch = 0
+                        } else if (valueTouch > self.nowVideoSrc.totalseconds) {
+                            valueTouch = self.nowVideoSrc.totalseconds
+                        }
+                        text += self.formatSecond(valueTouch);
+                    }
+//                    else if (typeTouch == 'vol') {
+//                        text += '音量：';
+//                        valueTouch = (firstTouch.pageY - lastTouch.pageY ) / self.element.offsetWidth;
+//                        valueTouch = self.element.volume + valueTouch;
+//                        if (valueTouch < 0) {
+//                            valueTouch = 0
+//                        } else if (valueTouch > 1) {
+//                            valueTouch = 1
+//                        }
+//                        text += Math.floor(valueTouch * 100) + '%';
+//                    }
+                    self.showTooltip(text);
+                }
+            }).on('touchend', function (e) {
+                if (typeTouch) {
+                    if (typeTouch == 'seek') {
+                        self.setPosition(valueTouch);
+                    }
+//                    else if (typeTouch == 'vol') {
+//                        self.element.volume = valueTouch;
+//                    }
+                    typeTouch = undefined;
+                    valueTouch = undefined;
+                }
+                self.lockTouch = false;
+            });
+
+        // 自动隐藏控制栏
+        setInterval(function(){
+            if(!(self.lockSeek || self.lockTouch || self.lockHide)){
+                self.hideController();
+            }
+        },5000);
 
         self.setBounds();
 
-        $(window).on('resize',function(){
+        $(window).on('resize', function () {
             self.setBounds();
         });
 
@@ -210,9 +293,62 @@ class player {
     /**
      * 设置弹幕边界和滚动速度
      */
-    private setBounds(){
+    private setBounds() {
         settings.commentLifeTime = Math.floor(window.innerWidth * 7.14);
         this.shizuku.danmaku.setBounds();
+    }
+
+    /**
+     * 隐藏控制栏
+     */
+    private toggleHideController(){
+
+        var self = this;
+        var element = self.playerElement.controller.root;
+
+        if(element.hasClass('fadeOutDown')){
+
+            // 手动触发 自动计时器延时
+            self.lockHide = true;
+            clearTimeout(self.lockHideTimer);
+            self.lockHideTimer = setTimeout(function(){
+                self.lockHide = false;
+            },5000);
+
+            self.showController();
+        } else if(!self.getActiveVideoElement()[0].paused) {
+            self.hideController();
+        }
+    }
+
+    private hideController(){
+
+        var self = this;
+        var element = self.playerElement.controller.root;
+
+        if(!self.getActiveVideoElement()[0].paused) {
+            element
+                .removeClass('fadeInUp fadeOutDown animated')
+                .addClass('fadeOutDown animated')
+                .one('webkitAnimationEnd mozAnimationEnd MSAnimationEnd oanimationend animationend', function(){
+
+                });
+        }
+    }
+
+    private showController(){
+
+        var self = this;
+        var element = self.playerElement.controller.root;
+
+        if(element.hasClass('fadeOutDown')){
+            element
+                .removeClass('fadeInUp fadeOutDown animated')
+                .addClass('fadeInUp animated')
+                .one('webkitAnimationEnd mozAnimationEnd MSAnimationEnd oanimationend animationend', function(){
+
+                });
+        }
     }
 
     /**
@@ -282,7 +418,7 @@ class player {
         element
             .text(msg)
             .css('left', (window.innerWidth - element.width()) / 2)
-            .stop(true,true)
+            .stop(true, true)
             .fadeIn(200)
             .delay(3000)
             .fadeOut(200);
@@ -369,8 +505,8 @@ class player {
                 activeElement.addClass('active');
                 activeElement[0].currentTime = secOffset;
 
-                this.videoElement.each(function(){
-                    if(!$(this).hasClass('active')){
+                this.videoElement.each(function () {
+                    if (!$(this).hasClass('active')) {
                         this.pause();
                     }
                 });
