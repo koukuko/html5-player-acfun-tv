@@ -55,7 +55,7 @@ class player {
         this.videoSrc = videoSrc;
 
         // 优先使用高清画质
-        this.nowVideoSrc = videoSrc['C20'] || videoSrc['C80'] || videoSrc['C70'] || videoSrc['C60'] || videoSrc['C50'] || videoSrc['C40'] || videoSrc['C30'] ||  videoSrc['C10'];
+        this.nowVideoSrc = videoSrc['C20'] || videoSrc['C80'] || videoSrc['C70'] || videoSrc['C60'] || videoSrc['C50'] || videoSrc['C40'] || videoSrc['C30'] || videoSrc['C10'];
 
         // 告知长度
         this.playerElement.controller.line.total.text(this.formatSecond(this.nowVideoSrc.totalseconds));
@@ -138,13 +138,17 @@ class player {
                         self.playerElement.controller.line.output.range.val(self.currentTime);
                     }
 
+                    if (self.playerElement.toolTip.hasClass('wait')) {
+                        self.playerElement.toolTip.removeClass('wait').fadeOut(100);
+                    }
+
                     self.shizuku.danmaku.time(self.currentTime * 1000);
 
                 })
                 .on('error', function () {
                     // 发生错误，重新尝试播放
                     if (!self.tryResume) {
-                        if(self.getActiveVideoElement()[0].paused){
+                        if (self.getActiveVideoElement()[0].paused) {
                             self.showTooltip('播放视频发生错误:尝试重新播放');
                         }
                     } else if (!self.tryReConnect) {
@@ -163,6 +167,9 @@ class player {
                         }
 
                     }
+                })
+                .on('waiting', function () {
+                    self.showTooltip('正在读取视频，请稍等片刻...', true);
                 });
 
         }
@@ -276,11 +283,11 @@ class player {
             });
 
         // 自动隐藏控制栏
-        setInterval(function(){
-            if(!(self.lockSeek || self.lockTouch || self.lockHide)){
+        setInterval(function () {
+            if (!(self.lockSeek || self.lockTouch || self.lockHide)) {
                 self.hideController();
             }
-        },5000);
+        }, 5000);
 
         self.setBounds();
 
@@ -301,51 +308,51 @@ class player {
     /**
      * 隐藏控制栏
      */
-    private toggleHideController(){
+    private toggleHideController() {
 
         var self = this;
         var element = self.playerElement.controller.root;
 
-        if(element.hasClass('fadeOutDown')){
+        if (element.hasClass('fadeOutDown')) {
 
             // 手动触发 自动计时器延时
             self.lockHide = true;
             clearTimeout(self.lockHideTimer);
-            self.lockHideTimer = setTimeout(function(){
+            self.lockHideTimer = setTimeout(function () {
                 self.lockHide = false;
-            },5000);
+            }, 5000);
 
             self.showController();
-        } else if(!self.getActiveVideoElement()[0].paused) {
+        } else if (!self.getActiveVideoElement()[0].paused) {
             self.hideController();
         }
     }
 
-    private hideController(){
+    private hideController() {
 
         var self = this;
         var element = self.playerElement.controller.root;
 
-        if(!self.getActiveVideoElement()[0].paused) {
+        if (!self.getActiveVideoElement()[0].paused) {
             element
                 .removeClass('fadeInUp fadeOutDown animated')
                 .addClass('fadeOutDown animated')
-                .one('webkitAnimationEnd mozAnimationEnd MSAnimationEnd oanimationend animationend', function(){
+                .one('webkitAnimationEnd mozAnimationEnd MSAnimationEnd oanimationend animationend', function () {
 
                 });
         }
     }
 
-    private showController(){
+    private showController() {
 
         var self = this;
         var element = self.playerElement.controller.root;
 
-        if(element.hasClass('fadeOutDown')){
+        if (element.hasClass('fadeOutDown')) {
             element
                 .removeClass('fadeInUp fadeOutDown animated')
                 .addClass('fadeInUp animated')
-                .one('webkitAnimationEnd mozAnimationEnd MSAnimationEnd oanimationend animationend', function(){
+                .one('webkitAnimationEnd mozAnimationEnd MSAnimationEnd oanimationend animationend', function () {
 
                 });
         }
@@ -411,17 +418,28 @@ class player {
      * 显示提示信息
      * @returns {*}
      */
-    private showTooltip(msg) {
+    private showTooltip(msg, wait?) {
 
         var element = this.playerElement.toolTip;
 
-        element
-            .text(msg)
-            .css('left', (window.innerWidth - element.width()) / 2)
-            .stop(true, true)
-            .fadeIn(200)
-            .delay(3000)
-            .fadeOut(200);
+        if (wait) {
+            element
+                .addClass('wait')
+                .text(msg)
+                .css('left', (window.innerWidth - element.width()) / 2)
+                .stop(true, true)
+                .fadeIn(200)
+        } else {
+            element
+                .removeClass('wait')
+                .text(msg)
+                .css('left', (window.innerWidth - element.width()) / 2)
+                .stop(true, true)
+                .fadeIn(200)
+                .delay(3000)
+                .fadeOut(200);
+        }
+
 
         return msg;
 
@@ -496,6 +514,8 @@ class player {
 
             if (secOffset < this.videoPart[i]) {
 
+                var lastActiveElement = this.getActiveVideoElement()[0];
+
                 this.currentTime = secOffset;
                 this.currentPart = i;
 
@@ -505,10 +525,14 @@ class player {
                 activeElement.addClass('active');
                 activeElement[0].currentTime = secOffset;
 
-                this.videoElement.each(function () {
-                    if (!$(this).hasClass('active')) {
-                        this.pause();
-                    }
+                if (lastActiveElement.paused) {
+                    activeElement[0].pause();
+                } else {
+                    activeElement[0].play();
+                }
+
+                this.videoElement.filter(':not(.active)').each(function () {
+                    this.pause();
                 });
 
                 break;
