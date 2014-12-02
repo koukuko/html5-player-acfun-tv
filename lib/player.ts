@@ -226,7 +226,24 @@ class player {
                 _.toggleFullScreen(self.playerElement.root[0]);
             })
             .on('click', function () {
-                self.toggleHideController();
+
+                var paused = self.getActiveVideoElement()[0].paused;
+                var showed = self.playerElement.controller.root.hasClass('fadeInUp');
+
+                if (paused) {
+
+                    self.playerElement.controller.play.click();
+                    if(!showed){
+                        self.toggleHideController();
+                    }
+
+                } else {
+                    if(showed){
+                        self.playerElement.controller.play.click();
+                    } else {
+                        self.toggleHideController();
+                    }
+                }
             })
             .on('touchstart', function (e) {
                 firstTouch = e.originalEvent.targetTouches[0];
